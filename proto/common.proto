@@ -1,0 +1,75 @@
+syntax = "proto3";
+package robot_api;
+// 公共类型:版本、表头、种类、模式、接管、安全限位。
+// 演进规则见 ../01-extensibility-and-versioning.md(只增不改 / 不复用 tag / semver)。
+
+message ApiVersion {
+  uint32 major = 1;   // 不兼容变更 +1
+  uint32 minor = 2;   // 向后兼容地加功能 +1
+  uint32 patch = 3;
+}
+
+message Header {
+  uint64 seq = 1;
+  // 进程本地单调时钟:robot 进程启动时取一次基准(OnceLock),之后取相对 ns。用于同进程 RTT / 排序。
+  int64  stamp_ns = 2;
+  // 可选:PTP/NTP 同步的绝对时间(ns)。RK3576 跑 LinuxPTP,从 pmc 取同步信息后填入。
+  // 用于跨节点对齐;无同步源时不填(消费端据此判断是否可跨机比时间)。
+  optional int64 sync_ns = 3;
+}
+
+message Vec3 { float x = 1; float y = 2; float z = 3; }
+message Quat { float w = 1; float x = 2; float y = 3; float z = 4; }
+
+// 机器人种类。用 kind + model(字符串)取代旧的硬编码 RobotType 枚举,出新产品不改 proto。
+// 组合(底盘+升降+臂)由上位机完成,不在此枚举。
+enum RobotKind {
+  ROBOT_KIND_UNSPECIFIED = 0;
+  ROBOT_KIND_ARM  = 1;
+  ROBOT_KIND_BASE = 2;
+  ROBOT_KIND_LIFT = 3;
+  ROBOT_KIND_HAND = 4;   // 夹爪/灵巧手:独立机器人(关节控制,复用 arm 的 JointTrajectory)
+}
+
+// 整组关节/部件的姿态。控制律本身已被 MIT 五元组吸收;这里是生命周期/安全姿态。
+enum OperatingMode {
+  // 控制器一律按 DISABLED(力矩关闭)处理:未设置 / 不认识的未来值,都 fail-safe 到关。
+  OPERATING_MODE_UNSPECIFIED = 0;
+  OPERATING_MODE_DISABLED      = 1;  // 力矩关闭(上电默认)
+  OPERATING_MODE_ACTIVE        = 2;  // 正常跟踪命令流
+  OPERATING_MODE_PASSIVE       = 3;  // 零力矩(让人推/拖)
+  OPERATING_MODE_GRAVITY_COMP  = 4;  // 控制器自算重力前馈(零重力拖动)
+  OPERATING_MODE_FAULT         = 100;
+  OPERATING_MODE_CALIBRATING   = 101;
+  // 5.. 预留:新姿态在此追加,客户读 supported_modes 判断是否支持
+}
+
+enum RobotMode {
+  ROBOT_MODE_UNSPECIFIED = 0;
+  ROBOT_MODE_STANDBY     = 1;  // 无 session holder
+  ROBOT_MODE_RUNNING     = 2;  // API holder 控制中
+  ROBOT_MODE_OVERTAKEN   = 3;  // 被遥控器/安全策略接管(可恢复)
+  ROBOT_MODE_FATAL_ERROR = 4;  // 急停/严重故障(需显式恢复)
+}
+
+// 接管原因 taxonomy(继承旧设计,可扩展)。
+// 注:不再单设 CommandSource —— "谁在控制" 可由 (RobotMode, OvertakenMode) 推出,避免双份状态不一致。
+enum OvertakenMode {
+  OVERTAKEN_MODE_UNSPECIFIED   = 0;
+  OVERTAKEN_MODE_JOYSTICK      = 1;  // → 遥控器在控
+  OVERTAKEN_MODE_COLLISION     = 2;  // → 安全
+  OVERTAKEN_MODE_CALIBRATING   = 3;
+  OVERTAKEN_MODE_MOTOR_ERROR   = 4;
+  OVERTAKEN_MODE_BATTERY_ERROR = 5;
+}
+
+message OvertakenReason {
+  OvertakenMode   mode = 1;
+  optional string human_readable = 2;
+  bool            user_exitable = 3;   // 遥控器握着=false;碰撞清除后=true
+}
+
+message GenericResponse {
+  bool            ok = 1;
+  optional string error = 2;
+}

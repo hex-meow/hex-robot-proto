@@ -1,0 +1,41 @@
+syntax = "proto3";
+package robot_api;
+import "common.proto";
+// 全向底盘子设备。对齐 ROS2 Twist/Odometry。
+// 键前缀 <vendor>/<controller_id>/<robot_index>/base/
+
+message Twist {        // 车体坐标系速度
+  float vx = 1;        // m/s 前后
+  float vy = 2;        // m/s 横移(全向)
+  float wz = 3;        // rad/s 自转
+}
+
+message BaseCommand {
+  uint32 session_id = 1;
+  Twist  twist = 2;
+  // PASSIVE(让人推)经 rpc/set_mode 进入;此处只承载速度命令
+}
+
+message Odometry {
+  Header header = 1;
+  float  x = 2;        // m
+  float  y = 3;        // m
+  float  theta = 4;    // rad
+  Twist  twist = 5;    // 当前车体速度
+}
+
+message BaseLimits {
+  optional float vx_max = 1;
+  optional float vy_max = 2;
+  optional float wz_max = 3;
+  optional float accel_max = 4;
+  // 防过热(客户实际需求):加可选字段即可
+  optional float wheel_tau_max     = 10;
+  optional float total_power_max_w = 11;
+}
+
+message BaseDescription {
+  string     kinematics = 1;      // 例: "omni3" | "mecanum4"
+  uint32     wheel_count = 2;
+  BaseLimits default_limits = 3;
+}

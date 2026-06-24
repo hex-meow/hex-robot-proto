@@ -1,0 +1,41 @@
+syntax = "proto3";
+package robot_api;
+import "common.proto";
+// robot 级(每个机器人=一进程一 CAN):描述、状态、会话与通用 RPC。
+// 键前缀 <vendor>/<controller_id>/<robot_index>/
+
+message RobotDescription {
+  string     robot_index = 1;
+  RobotKind  kind = 2;
+  string     model = 3;            // 例: "omni3_base"
+  ApiVersion api_version = 4;
+  repeated string   device_keys = 5;        // 本机器人的子设备资源键(arm/base/lift)
+  repeated OperatingMode supported_modes = 6;
+}
+
+message RobotStatus {
+  Header    header = 1;
+  RobotMode mode = 2;
+  uint32    session_holder = 3;              // 0 = 无
+  optional OvertakenReason overtaken_reason = 4;  // 仅 OVERTAKEN 时出现
+  // "谁在控制" 由 (mode, overtaken_reason.mode) 推出,不单设字段(避免双份状态不一致)。
+  // 客户判断"我是否在控":mode==RUNNING 且 session_holder==我的 session_id。
+}
+
+// ---- 会话 / RPC(queryable)----
+// 控制独占:同一 robot 同时最多一个 holder。读(状态订阅)永远开放、不需要会话。
+message AcquireSessionRequest  {
+  optional string client_name = 1;
+  optional string liveliness_key = 2;  // 绑定:此 token 消失(客户崩/断网)即自动释放会话
+}
+message AcquireSessionResponse {
+  bool   ok = 1;
+  uint32 session_id = 2;                // 成功时非 0
+  optional string error = 3;
+  uint32 current_holder = 4;            // 被占时:当前 holder(0=空闲)
+  optional string current_holder_name = 5;
+}
+message ReleaseSessionRequest  { uint32 session_id = 1; }
+message SetModeRequest         { uint32 session_id = 1; OperatingMode mode = 2; }
+message TryExitOvertakeRequest { uint32 session_id = 1; }
+message EnableRequest          { uint32 session_id = 1; bool on = 2; }

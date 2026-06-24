@@ -1,0 +1,11 @@
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+  except:
+    - PACKAGE_VERSION_SUFFIX   # package 用 robot_api(版本走 ApiVersion 消息 + semver tag),不强制 v1 后缀
+breaking:
+  use:
+    - FILE

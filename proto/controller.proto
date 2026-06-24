@@ -1,0 +1,54 @@
+syntax = "proto3";
+package robot_api;
+import "common.proto";
+// 控制器级共享资源:IMU / 急停 / 遥控器 / 控制器信息 / reboot。
+// 每类资源各占一个独立 key(<vendor>/<controller_id>/{imu,estop,remote,info,...}),
+// 各自 typed message + liveliness 表示在不在 —— 因此不再需要旧的通用 SecondaryDevice 封装。
+// 夹爪/灵巧手不在此(它是独立机器人 ROBOT_KIND_HAND,走 robot 级)。详见 ../04-...md
+
+message ImuData {
+  Header header = 1;
+  Vec3 accel = 2;   // m/s^2
+  Vec3 gyro  = 3;   // rad/s
+  Quat quat  = 4;   // 姿态(可选)
+}
+
+message EstopState {
+  Header header = 1;
+  bool engaged = 2;          // true=已按下/触发
+  optional string source = 3;
+}
+
+message RemoteState {        // 遥控器/手柄
+  Header header = 1;
+  bool   active = 2;         // 是否有人在操作(决定是否 overtake API)
+  repeated float axes = 3;   // 摇杆轴 [-1,1]
+  repeated bool  buttons = 4;
+}
+
+message RobotRef {           // 控制器挂载的一个机器人(供发现)
+  string    robot_index = 1; // 例: "0" / "r0"
+  RobotKind kind = 2;
+  string    model = 3;
+  string    description_key = 4;  // 去此键 query 取 RobotDescription
+}
+
+message ControllerInfo {
+  string     controller_id = 1;   // 来自 /etc/machine-id(回退 hostname)
+  ApiVersion api_version = 2;
+  string     fw_version = 3;
+  repeated string   features = 4; // 例: "thermal_limit","gravity_comp","imu","remote"
+  repeated RobotRef robots = 5;   // 本控制器上的机器人列表
+}
+
+// 危险操作:沿用旧设计的魔数保护。
+enum RebootMode {
+  REBOOT_MODE_UNSPECIFIED = 0;
+  REBOOT_MODE_APP_ONLY = 1;
+  REBOOT_MODE_LINUX = 2;
+  REBOOT_MODE_APP_WITH_MOTOR_POWER_CUT = 3;
+}
+message RebootRequest {
+  uint64     magic = 1;        // 必须等于约定魔数
+  RebootMode mode = 2;
+}

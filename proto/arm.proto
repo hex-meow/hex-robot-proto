@@ -77,3 +77,10 @@ message UrdfResource {          // queryable:device 级 `.../arm/urdf`;机器人
   optional bytes xml_gz = 4;    // 可选:gzip 压缩版本(大模型省带宽);与 xml 二选一
   // 视觉网格(package://...)按需另行获取,不内联;重力补偿/IK/碰撞均不依赖视觉网格。
 }
+
+// 设 base 系重力向量(m/s²),供控制器 GRAVITY_COMP 算 G(q)。斜装时非 [0,0,-9.81];
+// 后续可由基座重力计(controller 级 imu/accel)实时驱动。RPC 键 `arm/rpc/set_gravity`。
+message SetGravityRequest {
+  uint32 session_id = 1;
+  Vec3   gravity = 2;          // 例: [0,0,-9.81] 竖直安装
+}

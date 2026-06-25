@@ -1,0 +1,79 @@
+syntax = "proto3";
+package robot_api;
+import "common.proto";
+// 机械臂子设备。命令统一用 MIT 五元组;控制器收 chunk、1kHz 自插值。
+// 键前缀 <vendor>/<controller_id>/<robot_index>/arm/
+// 夹爪/末端执行器不在此:作为独立设备(自己的资源键 + 描述 + URDF),复用下面的 Joint* 消息
+//   —— 若与臂共用 CAN,同进程另开 ee/ 资源键即可,不必单起进程。
+
+message JointState {
+  Header header = 1;
+  repeated float q       = 2;   // 位置 rad
+  repeated float dq      = 3;   // 速度 rad/s
+  repeated float tau_est = 4;   // 力矩估计 N·m(来自电机电流)
+  repeated float temp    = 5;   // 可选 温度 ℃
+}
+
+message JointSetpoint {         // 一个时间点的 MIT 五元组(逐关节并列)
+  repeated float q      = 1;
+  repeated float dq     = 2;
+  repeated float kp     = 3;
+  repeated float kd     = 4;
+  repeated float tau_ff = 5;    // N·m
+}
+
+enum TimeoutBehavior {          // 看门狗超时(无后续 chunk)后的安全行为
+  TIMEOUT_BEHAVIOR_UNSPECIFIED = 0;
+  TIMEOUT_BEHAVIOR_HOLD        = 1;  // 保持最后一个 setpoint(带 kp/kd 主动保位,仍上力矩)
+  TIMEOUT_BEHAVIOR_RAMP_STOP   = 2;  // 在短斜坡内减速到零速再保位(运动中断流更平滑)
+  TIMEOUT_BEHAVIOR_FAULT       = 3;  // 进 FAULT:卸力矩/latched,需显式 clear_fault
+  // 短接绕组动态刹车(被动电气刹车,耗散制动,抵抗运动 —— 区别于 PASSIVE 的零力矩自由)。
+  // 当前电机尚不支持主动进入;不支持的控制器回退到安全默认,且不在 supported_timeouts 列出。
+  TIMEOUT_BEHAVIOR_SHORT_BRAKE = 4;
+}
+
+message JointTrajectory {       // = 一个 chunk;points 长度 H=1 退化为单点流
+  Header header = 1;
+  uint32 session_id = 2;        // 仲裁用:必须是 holder
+  repeated JointSetpoint points = 3;        // 长度 H = 1..N
+  // 每点目标时间,相对“本 chunk 被控制器激活的时刻”(控制器换入时锚定自身单调 now)。
+  // 纯相对 → 执行时序永不需要跨机时钟同步;Header.stamp_ns/sync_ns 仅诊断/排序,不参与执行。
+  //   多点 chunk:如 [0, 2e6, 4e6, ...](ns),控制器在相邻点间 1kHz 插值。
+  //   H=1 单点流(如 500Hz):填 [发送周期](500Hz → 2_000_000)→ 一阶保持,平滑趋近;
+  //                          填 [0] = 零阶保持(直接以该点为目标,阶梯式,靠电机 kp/kd 平滑)。
+  repeated int64 t_from_start_ns = 4;
+  TimeoutBehavior on_timeout = 5;
+}
+
+message ArmCalibration {        // 每台单独标定(set_zero/calibrate 写入,存设备侧),经 rpc 读写
+  repeated float zero_offset = 1;   // 各关节零位偏置 rad
+  repeated int32 joint_sign  = 2;   // 方向符号 ±1(可选)
+  // TODO(出厂参数 v2):基座硬连小 PCB 的倾角计 → 基座相对重力向量的安装倾斜,
+  //   安装不水平时用于修正重力补偿前馈。本版不做,先占位。
+  optional Vec3 base_mount_tilt = 3;
+}
+
+message ArmDescription {
+  uint32 dof = 1;
+  repeated string joint_names = 2;
+  repeated float  pos_min = 3;
+  repeated float  pos_max = 4;
+  repeated float  vel_max = 5;
+  repeated float  tau_max = 6;
+  repeated float  default_kp = 7;
+  repeated float  default_kd = 8;
+  repeated string motor_models = 9;     // 例: "DM4340"
+  repeated TimeoutBehavior supported_timeouts = 10;  // 客户据此判断 SHORT_BRAKE 等是否可用
+  // 防过热等限位用可选字段无痛扩展(见 01)
+  optional float total_power_max_w   = 20;
+  optional float thermal_derate_temp = 21;
+  // URDF/出厂动力学参数:见 UrdfResource,经 queryable `.../arm/urdf` 取(features 含 "urdf" 时)。
+}
+
+message UrdfResource {          // queryable:device 级 `.../arm/urdf`;机器人级 `.../<idx>/urdf`(已拼好 EE)
+  string xml = 1;               // URDF XML;碰撞用内联基元(box/cylinder)→ 自包含,够 IK/规划/重力补偿
+  string root_link = 2;         // 根 link 名
+  string tip_link  = 3;         // 工具安装 link 名(EE 在此处用 fixed joint 拼接)
+  optional bytes xml_gz = 4;    // 可选:gzip 压缩版本(大模型省带宽);与 xml 二选一
+  // 视觉网格(package://...)按需另行获取,不内联;重力补偿/IK/碰撞均不依赖视觉网格。
+}

@@ -3,8 +3,6 @@
 机器人公开 API 的 **protobuf 契约**(单一真相源),被控制器程序、GUI、上位机 SDK 等共享。
 设计见 `hex-meow/robot-overall-design/`。
 
-> 本仓库**暂不含机械臂**(`arm.proto`)——先做底盘最小闭环,需要时再加。
-
 ## 内容
 | 文件 | 内容 |
 |---|---|
@@ -12,6 +10,7 @@
 | `proto/controller.proto` | 控制器级:ImuData/EstopState/RemoteState/ControllerInfo/Reboot |
 | `proto/robot.proto` | robot 级:RobotDescription/RobotStatus/会话 RPC |
 | `proto/base.proto` | 底盘:Twist/BaseCommand/Odometry/BaseLimits/BaseDescription |
+| `proto/arm.proto` | 机械臂:JointState/JointSetpoint(MIT 五元组)/JointTrajectory(chunk)/TimeoutBehavior/ArmCalibration/ArmDescription/UrdfResource。夹爪/EE 复用 Joint* 消息,不单设。 |
 
 package 统一为 `robot_api`。演进规则:只增不改、不复用 tag、semver(见设计文档 01)。
 

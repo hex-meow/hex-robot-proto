@@ -11,6 +11,9 @@ message RobotDescription {
   ApiVersion api_version = 4;
   repeated string   device_keys = 5;        // 本机器人的子设备资源键(arm/base/lift)
   repeated OperatingMode supported_modes = 6;
+  // 由 supervisor 在配置步预拼(arm+EE)的整机 URDF 资源键;经此 query UrdfResource。
+  // 空 = 无整机 URDF,消费端可退回各设备级 .../<dev>/urdf 自行拼接。
+  optional string urdf_key = 7;
 }
 
 message RobotStatus {

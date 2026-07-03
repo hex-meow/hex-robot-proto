@@ -1,0 +1,33 @@
+syntax = "proto3";
+package robot_api;
+import "common.proto";
+// 机器事件(可靠层,REVIEW §0.7 / P1-3)。控制器在**检测到**的状态跃迁时发布:
+// 电机故障/离线、恢复、模式切换、会话授予/释放(含 reason)、看门狗触发、clear_fault。
+// 键前缀 <vendor>/<controller_id>/<robot_index>/events(逐条 Put)。
+// 迟到的 GUI 连上后经 `.../events/recent` queryable 取最近若干条历史(0x8130 案例:事发时无人
+// 订阅,事后仍查得到)。GUI 对 ERROR/FATAL 弹通知。
+// **只增不改**:新 message/枚举,不动既有字段。
+
+// 事件严重度。INFO<WARNING<ERROR<FATAL;GUI 通常对 ERROR/FATAL 主动弹窗。
+enum EventSeverity {
+  EVENT_SEVERITY_UNSPECIFIED = 0;
+  EVENT_SEVERITY_INFO        = 1;
+  EVENT_SEVERITY_WARNING     = 2;
+  EVENT_SEVERITY_ERROR       = 3;
+  EVENT_SEVERITY_FATAL       = 4;
+}
+
+// 一条机器事件。code 是稳定的机器可读标识(如 "motor_fault_0x8130"),
+// text 是人类可读补充,kv 是可选结构化附加(如 {"nid":"0x02"})。
+message Event {
+  Header        header = 1;
+  EventSeverity severity = 2;
+  string        code = 3;      // 稳定机器码,如 "motor_fault"、"session_granted"
+  string        text = 4;      // 人类可读描述
+  map<string, string> kv = 5;  // 可选结构化附加信息(nid / raw_code / reason 等)
+}
+
+// `.../events/recent` queryable 的回复:一次性回最近若干条(最新在后)。
+message EventLog {
+  repeated Event events = 1;
+}

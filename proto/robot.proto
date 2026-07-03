@@ -42,3 +42,7 @@ message ReleaseSessionRequest  { uint32 session_id = 1; }
 message SetModeRequest         { uint32 session_id = 1; OperatingMode mode = 2; }
 message TryExitOvertakeRequest { uint32 session_id = 1; }
 message EnableRequest          { uint32 session_id = 1; bool on = 2; }
+// 清除锁存的 FATAL(电机故障/离线进入的 Fault,P1-3)。holder 才能调;
+// 臂=清 Fault 回 IDLE_MODE(电机侧故障先调 clear_error);底盘=reinit/clear_errors 后回 idle。
+// 失败(电机仍故障/非 holder)如实回 GenericResponse.error。
+message ClearFaultRequest      { uint32 session_id = 1; }

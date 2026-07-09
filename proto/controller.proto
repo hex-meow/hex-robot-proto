@@ -35,6 +35,12 @@ message RobotRef {           // 控制器挂载的一个机器人(供发现)
   string    description_key = 4;  // 去此键 query 取 RobotDescription
 }
 
+message VbusState {          // <cid>/hw/<id>(kind="vbus"):总线电压/电流(支持的板才有,三态①)
+  Header header = 1;
+  float voltage_v = 2;
+  optional float current_a = 3;
+}
+
 // <cid>/hw/info(queryable,hex-hw-supervisor 发布):本板支持哪些 hw 资源(01 三态①)。
 // "在不在"(三态②/③)看各资源 key 的 liveliness,不在这里重复。
 message HwResource {

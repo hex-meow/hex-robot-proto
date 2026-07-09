@@ -1,9 +1,11 @@
 syntax = "proto3";
 package robot_api;
 import "common.proto";
-// 控制器级共享资源:IMU / 急停 / 遥控器 / 控制器信息 / reboot。
-// 每类资源各占一个独立 key(<vendor>/<controller_id>/{imu,estop,remote,info,...}),
-// 各自 typed message + liveliness 表示在不在 —— 因此不再需要旧的通用 SecondaryDevice 封装。
+// 控制器级共享资源:IMU / 急停 / 遥控器 / 控制器信息。
+// v0.2(2026-07-09,随 09-controller-hal):controller 级硬件 key 统一加 hw/ 前缀 ——
+// <vendor>/<controller_id>/hw/{<resource_id>,info};由开源 hex-hw-supervisor 发布(板卡配置
+// 为唯一事实源),LAN 侧经 router ACL 只读。<cid>/info(ControllerInfo)仍归 launcher。
+// 各资源 typed message + liveliness 表示在不在 —— 因此不再需要旧的通用 SecondaryDevice 封装。
 // 夹爪/灵巧手不在此(它是独立机器人 ROBOT_KIND_HAND,走 robot 级)。详见 ../04-...md
 
 message ImuData {
@@ -31,6 +33,20 @@ message RobotRef {           // 控制器挂载的一个机器人(供发现)
   RobotKind kind = 2;
   string    model = 3;
   string    description_key = 4;  // 去此键 query 取 RobotDescription
+}
+
+// <cid>/hw/info(queryable,hex-hw-supervisor 发布):本板支持哪些 hw 资源(01 三态①)。
+// "在不在"(三态②/③)看各资源 key 的 liveliness,不在这里重复。
+message HwResource {
+  string id = 1;      // 资源实例名,即 key 尾段:<cid>/hw/<id>。例 "imu0"
+  string kind = 2;    // "imu" | "estop" | "remote" | "vbus" | ...(决定消息类型)
+  string model = 3;   // 可选,如 "qmi8658" / "mock"
+}
+
+message HwInfo {
+  string controller_id = 1;
+  string sup_version = 2;           // hex-hw-supervisor 版本
+  repeated HwResource resources = 3;
 }
 
 message ControllerInfo {

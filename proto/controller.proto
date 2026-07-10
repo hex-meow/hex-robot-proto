@@ -74,3 +74,52 @@ message RebootRequest {
   uint64     magic = 1;        // 必须等于约定魔数
   RebootMode mode = 2;
 }
+
+// ── 控制器配置 RPC(07 v0.3 简化版,2026-07-09):launcher 为 launch.yaml 提供
+// <cid>/config(queryable)与 <cid>/rpc/config/{validate,set}、<cid>/rpc/restart。
+// 语义:validate-reject(非法绝不落盘)+ 原子写(tmp+fsync+rename)+ 恢复模式
+// (配置空/非法/子进程反复崩溃时 launcher 仍可发现、可写)。无 trial-boot A/B。
+// board.yaml(hex-hw-supervisor)另走 <cid>/hw/rpc/config/set:同 validate-reject +
+// 原子写 + sync,但【断电重启后生效】(09 §13.1),无热 apply。
+
+message ConfigGet {
+  string yaml = 1;
+  string sha256 = 2;          // 乐观锁基准
+  string path = 3;            // canonicalize 后的实际文件路径
+  int64  mtime_unix = 4;
+  ApiVersion schema_version = 5;
+  bool   recovery_mode = 6;   // true = 当前配置空/非法,launcher 处于恢复模式(零 robot)
+}
+
+message CriticalChange {      // 语义红线(mock 翻转/换 CAN/标定 env):GUI 红色 diff + 复述确认
+  string robot_id = 1;
+  string field = 2;
+  string old = 3;
+  string new = 4;
+}
+
+message ConfigValidateRequest  { string yaml = 1; }
+message ConfigValidateResponse {
+  bool ok = 1;
+  repeated string errors = 2;
+  repeated CriticalChange critical_changes = 3;
+}
+
+message ConfigSetRequest {
+  string yaml = 1;
+  string expect_sha256 = 2;   // 与当前文件不符 → 拒绝(防两个 GUI 互踩)
+  bool   apply = 3;           // true = 写盘后立即重启子进程生效
+  bool   confirm = 4;         // 有 critical_changes 时必须 true(GUI 复述确认后)
+  bool   force = 5;           // 越过会话占用检查(危险,文案写明后果)
+}
+message ConfigSetResponse {
+  bool ok = 1;
+  repeated string errors = 2;
+  repeated CriticalChange critical_changes = 3;
+  string sha256 = 4;          // 写入后的新指纹
+  bool   applied = 5;
+  repeated string robots = 6; // apply 影响的机器人
+}
+
+message RestartRequest  { bool confirm = 1; bool force = 2; }
+message RestartResponse { bool ok = 1; repeated string robots = 2; }

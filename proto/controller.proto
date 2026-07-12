@@ -123,3 +123,18 @@ message ConfigSetResponse {
 
 message RestartRequest  { bool confirm = 1; bool force = 2; }
 message RestartResponse { bool ok = 1; repeated string robots = 2; }
+
+// ── 整机拼接(13-machine-assembly §4;launcher 起 <cid>/machine queryable)──
+// 无 machine 段 → 无此 key(三态①);有 → 常驻。消费者:GUI 数字孪生 / 将来 host SDK 拼整机 URDF。
+
+message MountEdge {                // 一条挂载边:parent 的 parent_link ← child 的 root_link(fixed joint)
+  string parent = 1;               // robot id(如 lift0)
+  string parent_link = 2;          // 挂载点 link 名(如 arm_mount_0;须在 parent 的 mount_links 里)
+  string child = 3;                // robot id(如 arm0)
+  Vec3 xyz = 4;                    // POS 额外偏移 m
+  Vec3 rpy = 5;                    // POSE 额外偏移 rad(静态挂载偏移,rpy 无万向锁问题,13 §6.2)
+}
+
+message MachineLayout {            // 只含 base↔lift↔arm 边;arm↔EE 边隐式跟随臂的 EE 绑定(13 §3)
+  repeated MountEdge edges = 1;
+}

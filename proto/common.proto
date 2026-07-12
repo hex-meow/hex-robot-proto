@@ -28,7 +28,9 @@ enum RobotKind {
   ROBOT_KIND_ARM  = 1;
   ROBOT_KIND_BASE = 2;
   ROBOT_KIND_LIFT = 3;
-  ROBOT_KIND_HAND = 4;   // 夹爪/灵巧手:独立机器人(关节控制,复用 arm 的 JointTrajectory)
+  // 2026-07-12 改名 HAND→EE(11-ee-api §0.3:真空吸盘/电磁铁类 EE 不是 hand)。
+  // 编号 4 不变 → wire 兼容,只改源码名;YAML kind 同步为 "ee"("hand" 别名保留一个版本)。
+  ROBOT_KIND_EE = 4;     // 末端执行器(夹爪/灵巧手/吸盘…):独立机器人(关节控制,复用 arm 的 JointTrajectory)
 }
 
 // 整组关节/部件的姿态。控制律本身已被 MIT 五元组吸收;这里是生命周期/安全姿态。

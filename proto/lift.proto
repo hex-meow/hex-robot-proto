@@ -1,0 +1,64 @@
+syntax = "proto3";
+package robot_api;
+import "common.proto";
+import "arm.proto";
+// Lift(升降)子设备。设计:robot-overall-design/12-lift-api.md(v0.2,2026-07-12)。
+// 键前缀 <vendor>/<controller_id>/<robot_index>/lift/
+// 命令/状态完全复用 arm.proto 的 Joint*(lift/command = JointTrajectory,lift/joint_state = JointState):
+// 正典坐标 = URDF 关节坐标(直线式 prismatic:米、+z 向上、0=最低位;旋转式 revolute:rad)。
+// 1..N DOF(直线=1,直线+旋转=2,弯腰折叠=3…):needs_homing/hold_type/守卫接触阈值按关节 repeated。
+// 与底盘共 CAN 时由底盘进程托管(总线所有者模型,11-ee-api §2.1),键空间与 session 不变。
+
+// 断电/去使能时机构如何保持(12 §3;现有硬件全部"断电不掉",2026-07-12 用户确认)。
+enum HoldType {
+  HOLD_TYPE_UNSPECIFIED  = 0;
+  HOLD_TYPE_SELF_LOCKING = 1;  // 丝杠/蜗轮自锁,不可反驱
+  HOLD_TYPE_BRAKE        = 2;  // 掉电抱闸(去使能=闸合;时序归电机驱动,不进 API)
+  HOLD_TYPE_NONE         = 3;  // 可反驱无保持(v1 不存在;若出现则 DISABLED 语义须重审)
+}
+
+message LiftStatus {            // pub .../lift/status(变化+~10Hz 心跳)
+  OperatingMode mode = 1;
+  bool   estop = 2;
+  uint32 fault_code = 3;
+  float  loop_hz_actual = 4;
+  bool   homed = 5;             // = 所有 needs_homing 关节均已 home;免 homing 型号恒 true
+  optional bool brake_engaged = 6;  // 任一 HOLD_TYPE_BRAKE 关节的闸合状态(只读遥测,无控制接口)
+  optional bool contact_stop = 7;   // 守卫接触触发已缓停(12 §6);清除 = 新的有效 chunk
+  repeated bool joint_homed = 8;    // 按关节(多 DOF 观察 homing 进度;dof=1 冗余无害)
+}
+
+message LiftLimits {            // rpc/set_limits;控制器强制 clamp
+  repeated float pos_min = 1;   // 软限位;出厂默认来自铭牌标定(homing 产物,12 §7)
+  repeated float pos_max = 2;
+  repeated float vel_max = 3;
+  repeated float tau_max = 4;
+  // 守卫接触(Stretch 惯例,12 §6):运动中任一关节 tau_est 突破阈值 ⇒ 缓停 + contact_stop + events。
+  // 按关节 repeated,与 joint_names 对齐;空 = 全部不启用,NaN/0 = 该关节不启用。
+  repeated float contact_tau_pos = 10;  // +q 方向(直线式=上行)接触力/矩阈值
+  repeated float contact_tau_neg = 11;  // −q 方向(直线式=下行;撞人/夹物风险更高,通常设更小)
+}
+
+message LiftDescription {       // queryable .../lift/description
+  uint32 dof = 1;               // 1..N:直线=1,直线+旋转=2,弯腰三折叠=3…
+  repeated string joint_names = 2;   // 与 URDF 一致;单直线式约定名 lift_joint
+  repeated float pos_min = 3;   // m(prismatic)或 rad(revolute),按 URDF 关节类型
+  repeated float pos_max = 4;
+  repeated float vel_max = 5;
+  repeated float tau_max = 6;
+  repeated float default_kp = 7;
+  repeated float default_kd = 8;
+  repeated string motor_models = 9;
+  repeated TimeoutBehavior supported_timeouts = 10;  // lift 默认 on_timeout=RAMP_STOP(缓停后自锁/抱闸保持)
+  repeated bool needs_homing = 11;   // 按关节:直线 true / 旋转(≤1 Rev,接缝规则)false
+  repeated HoldType hold_type = 12;  // 按关节:自锁/抱闸/可反驱
+  optional float payload_max_kg = 13;
+  // PASSIVE/GRAVITY_COMP 支持与否按"全部关节可反驱"判定,经 robot 级 supported_modes 声明(12 §6)。
+}
+
+message HomeRequest {           // queryable .../rpc/home(session holder;12 §5)
+  // 一次做完所有 needs_homing 关节,顺序是型号常量;执行期间 OperatingMode=CALIBRATING。
+  // queryable 立即回 {ok: started};结果走 events + LiftStatus.homed / joint_homed。
+  // 未 homed 时 set_mode(ACTIVE) 拒绝;controller 重启必重 homing(2026-07-12 定稿,不做位置持久化)。
+  uint32 session_id = 1;
+}

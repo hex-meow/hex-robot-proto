@@ -1,0 +1,93 @@
+syntax = "proto3";
+package robot_api;
+import "common.proto";
+import "arm.proto";
+// EE(末端执行器)子设备。设计:robot-overall-design/11-ee-api.md(v0.2,2026-07-12)。
+// 键前缀 <vendor>/<controller_id>/<robot_index>/ee/
+// 命令/状态完全复用 arm.proto 的 Joint*(ee/command = JointTrajectory,ee/joint_state = JointState):
+// 正典坐标 = URDF driver 关节坐标(平行爪=单指位移 m,旋转爪=单爪角 rad;0=全闭,正=张开);
+// 从动手指在 URDF 用 <mimic> 表达,不出现在 joint_names/命令向量里。
+// 与臂共 CAN 时由臂进程托管(总线所有者模型,11 §2.1),键空间与 session 不变。
+
+// 抓取状态(纯观察者,11 §5):控制器 1kHz 堵转检测,四态与 Robotiq gOBJ / DH 0x0201 同构。
+// 阈值(stall_vel/stall_time/goal_tol)是型号常量,不进公开协议。
+enum GraspState {
+  GRASP_STATE_UNSPECIFIED = 0;  // 未使能/无有效目标
+  GRASP_STATE_MOVING      = 1;  // 向目标运动中
+  GRASP_STATE_AT_POSITION = 2;  // 到达目标,途中未堵转 ⇒ 未夹到物体(或已丢)
+  GRASP_STATE_HOLDING     = 3;  // 目标之外堵转(τ 达限 & |dq|<阈值 持续 T)⇒ 夹住物体
+  GRASP_STATE_LOST        = 4;  // 曾 HOLDING,后滑到目标位 ⇒ 物体丢失(掉落告警位)
+}
+
+// estop/FAULT 期间 EE 的姿态(11 §10,2026-07-12 用户裁决:可配,默认保位)。
+// 注意 HOLD/KEEP_GRIP 意味着 estop 期间 EE 电机仍供力矩(夹持力小且被 τ 钳位约束,
+// 与协作臂"保护停时保持夹持"的工业惯例一致);需要"断一切"语义的部署配 RELEASE。
+enum EstopBehavior {
+  ESTOP_BEHAVIOR_UNSPECIFIED   = 0;
+  ESTOP_BEHAVIOR_HOLD_POSITION = 1;  // 默认:低 kp 保持触发时的 q(位置伺服;物体受力可能缓降)
+  ESTOP_BEHAVIOR_RELEASE       = 2;  // 松开:卸力矩,夹持物可能滑落
+  ESTOP_BEHAVIOR_KEEP_GRIP     = 3;  // 抗拒张开:冻结触发前的力命令(τ 保持),绝不松手
+}
+
+message EeStatus {              // pub .../ee/status(变化+~10Hz 心跳)
+  OperatingMode mode = 1;
+  bool   estop = 2;
+  uint32 fault_code = 3;
+  float  loop_hz_actual = 4;
+  GraspState grasp_state = 5;
+  optional bool homed = 6;      // 仅 needs_homing 型号有意义(gp80/gr80 行程≤½圈,恒不填)
+  EstopBehavior estop_behavior = 7;  // 当前生效配置(set_estop_behavior 可改,重启回型号默认)
+}
+
+// driver 关节 → 开口宽度(m)的映射元数据。width(q) = Σ poly[i]·q^i。
+// gp80(平行爪,width=2q)= [0, 2];gr80(旋转爪)= 从 CAD 尺寸对爪尖间距做低阶多项式拟合。
+// 消费端(GUI 滑条/SDK grasp(width=…)/数据集标注)读系数即可换算,无需认识具体型号;
+// 反向(宽度→q)由 SDK 在单调区间数值求逆。
+message OpeningMap {
+  repeated float poly = 1;      // 多项式系数,poly[i] 对应 q^i
+  float width_max = 2;          // 全开开口 m
+  optional string datum = 3;    // 宽度测量定义(旋转爪必填:如"爪尖间距";宽度随抓取深度变化须写明)
+}
+
+// 触觉阵列布局(行业无标准,2026-07 确认无 REP;平铺数组+布局描述符是事实做法)。
+// taxel 次序/间距/单位全在此静态描述,永不进每帧消息。
+message TaxelLayout {
+  uint32 rows = 1;
+  uint32 cols = 2;
+  float  pitch_x = 3;           // 相邻 taxel 中心距 m
+  float  pitch_y = 4;
+  string order = 5;             // "row-major" | "column-major"
+}
+
+// EE 传感器自描述(v1 恒空;字段随首个 F/T/触觉硬件定稿,tag 预留,加字段=minor bump)。
+// 存在性三态照 01:不支持=不在 sensors;支持但没插=在 sensors + liveliness down;在=数据流。
+message EeSensorInfo {
+  string kind = 1;              // "ft6" | "pressure_array" | …(字符串,不做枚举)
+  string sensor_id = 2;         // 数据键 = .../ee/sensor/<sensor_id>
+  string frame = 3;             // 测量坐标系 = EE URDF 中的 link 名(F/T 必填;力矩绕该系原点)
+  float  rate_hz = 4;
+  optional string unit = 5;     // "N,N.m" | "kPa" | "raw"
+  optional TaxelLayout layout = 6;
+}
+
+message EeDescription {         // queryable .../ee/description
+  uint32 dof = 1;               // 主动 DOF(driver 关节数);gp80/gr80 = 1,多电机灵巧手 = N
+  repeated string joint_names = 2;   // driver 关节名,与 URDF 一致;joint_names[0] = 主 driver(约定)
+  repeated float pos_min = 3;   // m 或 rad(按 URDF 关节类型)
+  repeated float pos_max = 4;
+  repeated float vel_max = 5;
+  repeated float tau_max = 6;   // driver 关节广义力 = 与 q 功率共轭(mimic 从动折算入内;11 §3)
+  repeated float default_kp = 7;
+  repeated float default_kd = 8;
+  repeated string motor_models = 9;
+  repeated TimeoutBehavior supported_timeouts = 10;  // EE 默认 on_timeout=HOLD(断流保持抓握,11 §2)
+  string archetype = 11;        // "motion"(运动轴型,v1 唯一)| "flow"(真空/流体型预留,命令≠关节)
+  optional OpeningMap opening_map = 12;
+  bool needs_homing = 13;       // gp80/gr80 = false(行程≤½圈,接缝规则);行程>1圈的型号 = true
+  repeated EeSensorInfo sensors = 20;
+}
+
+message SetEstopBehaviorRequest {  // queryable .../ee/rpc/set_estop_behavior(session holder)
+  uint32 session_id = 1;
+  EstopBehavior behavior = 2;
+}

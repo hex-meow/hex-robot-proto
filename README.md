@@ -7,7 +7,7 @@
 | 文件 | 内容 |
 |---|---|
 | `proto/common.proto` | 版本/Header/RobotKind/OperatingMode/RobotMode/OvertakenReason |
-| `proto/controller.proto` | 控制器级:ImuData/EstopState/RemoteState/ControllerInfo/Reboot |
+| `proto/controller.proto` | 控制器级:ImuData/EstopState/RemoteState/VbusState/PowerState/ControllerInfo/Reboot |
 | `proto/robot.proto` | robot 级:RobotDescription/RobotStatus/会话 RPC |
 | `proto/base.proto` | 底盘:Twist/BaseCommand/Odometry/BaseLimits/BaseDescription |
 | `proto/arm.proto` | 机械臂:JointState/JointSetpoint(MIT 五元组)/JointTrajectory(chunk)/TimeoutBehavior/ArmCalibration/ArmDescription/UrdfResource。夹爪/EE 复用 Joint* 消息,不单设。 |

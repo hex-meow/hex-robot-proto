@@ -8,11 +8,17 @@
 |---|---|
 | `proto/common.proto` | 版本/Header/RobotKind/OperatingMode/RobotMode/OvertakenReason |
 | `proto/controller.proto` | 控制器级:ImuData/EstopState/RemoteState/VbusState/PowerState/ControllerInfo/Reboot |
+| `proto/hal_ipc.proto` | 同机只读 HAL IPC:原子 Hello/snapshot + typed resource updates |
 | `proto/robot.proto` | robot 级:RobotDescription/RobotStatus/会话 RPC |
 | `proto/base.proto` | 底盘:Twist/BaseCommand/Odometry/BaseLimits/BaseDescription |
 | `proto/arm.proto` | 机械臂:JointState/JointSetpoint(MIT 五元组)/JointTrajectory(chunk)/TimeoutBehavior/ArmCalibration/ArmDescription/UrdfResource。夹爪/EE 复用 Joint* 消息,不单设。 |
 
 package 统一为 `robot_api`。演进规则:只增不改、不复用 tag、semver(见设计文档 01)。
+
+`hal_ipc.proto` 是同一 Linux 主机内、单向
+`hex-hw-supervisor -> robot/hex-hal-zenoh-bridge` 的传输契约。它复用公开硬件消息，但
+不是外部控制 API：UDS 帧固定为 4 字节大端长度加 protobuf，当前协议版本为 1.0.0，
+没有写入或通用 RPC。
 
 ## 被其他仓库引用(git submodule)
 在消费仓库里:

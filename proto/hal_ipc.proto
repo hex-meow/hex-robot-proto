@@ -1,0 +1,52 @@
+syntax = "proto3";
+package robot_api;
+
+import "common.proto";
+import "controller.proto";
+
+// Linux 主机内的 HAL IPC 契约。它只承载 hex-hw-supervisor -> 本机消费者的只读数据，
+// 不属于 LAN 控制面，也没有反向命令/RPC。传输为 Unix Domain Socket 上的
+// uint32 big-endian 长度前缀 + HalIpcFrame protobuf（单帧上限 1 MiB）。
+
+message HalResourceUnavailable {
+  // 只用于诊断；消费者必须仅凭 unavailable 本身进入 fail-safe，不能解析此字符串做策略。
+  string reason = 1;
+}
+
+message HalResourceUpdate {
+  string resource_id = 1;
+  // 每个资源独立的 trust/driver incarnation，始终大于 0。在单个 supervisor 进程及
+  // 其连接内不回退；正常样本阶段内保持不变，trust loss 或新的 driver incarnation
+  // 才递增。跨 supervisor 进程可从任意正值重新开始，EOF + 新 Hello 就是该边界。
+  // 样本推进由 typed message 的 Header.seq 与 observed_boottime_ns 表达。
+  uint64 resource_epoch = 2;
+  // producer 调用 CLOCK_BOOTTIME 得到的纳秒值；同一 Linux 主机上的消费者可直接判断新鲜度。
+  // 同一有效 resource_epoch 内必须严格递增；trust transition 后可建立新 baseline。
+  uint64 observed_boottime_ns = 3;
+
+  // 每个 typed state 必须带 Header 且 Header.seq > 0；同一有效 resource_epoch 内 seq
+  // 必须严格递增。Unavailable 没有 Header。
+  oneof state {
+    HalResourceUnavailable unavailable = 10;
+    ImuData imu = 11;
+    EstopState estop = 12;
+    RemoteState remote = 13;
+    VbusState vbus = 14;
+    PowerState power = 15;
+  }
+}
+
+message HalIpcHello {
+  ApiVersion protocol_version = 1; // 当前固定为 1.0.0
+  HwInfo info = 2;                 // board.yaml 的固定完整 inventory
+  // accept 临界区内取得的原子快照；恰好包含 info.resources 的每一项。
+  repeated HalResourceUpdate snapshot = 3;
+}
+
+message HalIpcFrame {
+  oneof body {
+    // server 每次连接发送的第一帧，且只发送一次。
+    HalIpcHello hello = 1;
+    HalResourceUpdate update = 2;
+  }
+}

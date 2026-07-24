@@ -3,9 +3,10 @@ package robot_api;
 import "common.proto";
 // 控制器级共享资源:IMU / 急停 / 遥控器 / 控制器信息。
 // v0.2(2026-07-09,随 09-controller-hal):controller 级硬件 key 统一加 hw/ 前缀 ——
-// <vendor>/<controller_id>/hw/{<resource_id>,info};由开源 hex-hw-supervisor 发布(板卡配置
-// 为唯一事实源),LAN 侧经 router ACL 只读。<cid>/info(ControllerInfo)仍归 launcher。
-// 各资源 typed message + liveliness 表示在不在 —— 因此不再需要旧的通用 SecondaryDevice 封装。
+// <vendor>/<controller_id>/hw/{<resource_id>,info};hex-hw-supervisor 以板卡配置为唯一事实源，
+// 经同机只读 UDS 向 robot/bridge 供给；hex-hal-zenoh-bridge 将原 typed message + liveliness
+// 精确映射到公共 hw/**，LAN 侧经 router ACL 只读。<cid>/info(ControllerInfo)仍归 launcher。
+// 因此不再需要旧的通用 SecondaryDevice 封装。
 // 夹爪/灵巧手不在此(它是独立机器人 ROBOT_KIND_EE,走 robot 级)。详见 ../04-...md
 
 message ImuData {
@@ -58,7 +59,8 @@ message PowerState {
   PowerOutputState output_state = 2;
 }
 
-// <cid>/hw/info(queryable,hex-hw-supervisor 发布):本板支持哪些 hw 资源(01 三态①)。
+// <cid>/hw/info(queryable,hex-hal-zenoh-bridge 公开):本板支持哪些 hw 资源(01 三态①)；
+// inventory 原始来源仍是 hex-hw-supervisor 的 UDS Hello。
 // "在不在"(三态②/③)看各资源 key 的 liveliness,不在这里重复。
 message HwResource {
   string id = 1;      // 资源实例名,即 key 尾段:<cid>/hw/<id>。例 "imu0"
